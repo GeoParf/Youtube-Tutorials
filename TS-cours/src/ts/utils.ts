@@ -1,0 +1,1 @@
+export const someString: string = 'hello from utils'; 
