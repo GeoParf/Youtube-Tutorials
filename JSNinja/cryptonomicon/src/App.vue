@@ -11,6 +11,7 @@
               <input
                 v-model="ticker"
                 @keydown.enter="add(ticker.name)"
+                @input="showAutoComplit(ticker)"
                 type="text"
                 name="wallet"
                 id="wallet"
@@ -158,12 +159,24 @@ export default {
   name: "App",
   data() {
     return {
+      coinList: [],
+      shownAutoComplitTickets: [],
       ticker: "",
-      tickers: [],
+      tickers: [], // Монеты добавленные для отслеживания
       sel: null,
       graph: [],
     };
   },
+  mounted: async function () {
+    const f = await fetch(
+      "https://min-api.cryptocompare.com/data/all/coinlist?summary=true"
+    );
+    const data = await f.json();
+    for (const [key] of Object.entries(data.Data)) {
+      this.coinList.push(key);
+    }
+  },
+
   methods: {
     add() {
       const currentTicker = { name: this.ticker, price: "-" };
@@ -191,15 +204,20 @@ export default {
       this.sel = ticket;
       this.graph = [];
     },
+
     handleDelete(tickerToRemove) {
       this.tickers = this.tickers.filter((t) => t !== tickerToRemove);
     },
+
     normolizeGraph() {
       const maxValue = Math.max(...this.graph);
       const minValue = Math.min(...this.graph);
       return this.graph.map(
         (price) => 5 + ((price - minValue) * 95) / (maxValue - minValue)
       );
+    },
+    showAutoComplit(tickerName) {
+      console.log(tickerName);
     },
   },
 };
