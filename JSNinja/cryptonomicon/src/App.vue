@@ -176,28 +176,40 @@ export default {
       this.coinList.push(key);
     }
   },
+  created() {
+    const tickersData = localStorage.getItem("criptonomicon-list");
+    if (tickersData) {
+      this.tickers = JSON.parse(tickersData);
+      this.tickers.forEach((ticker) => {
+        this.subscribeToUpdate(ticker.name);
+      });
+    }
+  },
 
   methods: {
-    add() {
-      const currentTicker = { name: this.ticker, price: "-" };
-      this.tickers.push(currentTicker);
+    subscribeToUpdate(tickerName) {
       setInterval(async () => {
         // Идем фечем на сервер
         const f = await fetch(
-          `https://min-api.cryptocompare.com/data/price?fsym=${currentTicker.name}&tsyms=USD&api_key=26a509a64cdd3533c818e19ff7be03d6df0479645c94471a7ce2d50653d8cd91`
+          `https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=26a509a64cdd3533c818e19ff7be03d6df0479645c94471a7ce2d50653d8cd91`
         );
         // Записываем результат феча в data
         const data = await f.json();
         // Для реализации реактивности находим тикер в массиве тикеров по имени
-        this.tickers.find((t) => t.name === currentTicker.name).price =
+        this.tickers.find((t) => t.name === tickerName).price =
           // Форматируем вывод, если цена монеты меньше 1 (может быть много нулей до значащего числа, toPrecision покацывает две последних значащих цифры)
           data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
-        if (this.sel?.name === currentTicker.name) {
+        if (this.sel?.name === tickerName) {
           this.graph.push(data.USD);
         }
       }, 5000);
-
+    },
+    add() {
+      const currentTicker = { name: this.ticker, price: "-" };
+      this.tickers.push(currentTicker);
+      localStorage.setItem("criptonomicon-list", JSON.stringify(this.tickers));
       this.ticker = "";
+      this.subscribeToUpdate(currentTicker.name);
     },
 
     select(ticket) {
@@ -217,7 +229,16 @@ export default {
       );
     },
     showAutoComplit(tickerName) {
-      console.log(tickerName);
+      this.coinList.forEach((coin) => {
+        if (coin.match(tickerName)) {
+          this.shownAutoComplitTickets.push(coin);
+        }
+      });
+      this.shownAutoComplitTickets.forEach((t, i) => {
+        if (i <= 3) {
+          console.log(t);
+        }
+      });
     },
   },
 };
