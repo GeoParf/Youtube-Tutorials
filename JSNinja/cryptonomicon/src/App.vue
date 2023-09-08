@@ -10,8 +10,8 @@
             <div class="mt-1 relative rounded-md shadow-md">
               <input
                 v-model="ticker"
-                @keydown.enter="add(ticker.name)"
-                @input="showAutoComplit(ticker)"
+                @keydown.enter="add()"
+                @input.stop="inputHandler(ticker)"
                 type="text"
                 name="wallet"
                 id="wallet"
@@ -20,30 +20,21 @@
               />
             </div>
             <div
+              v-if="showAutoComplitTickers"
               class="flex bg-white shadow-md p-1 rounded-md shadow-md flex-wrap"
             >
               <span
+                v-for="item in showAutoComplitTickers"
+                :key="item"
+                @click.stop="addFromAutoComplit(item)"
                 class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer"
               >
-                BTC
-              </span>
-              <span
-                class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer"
-              >
-                DOGE
-              </span>
-              <span
-                class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer"
-              >
-                BCH
-              </span>
-              <span
-                class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer"
-              >
-                CHD
+                {{ item }}
               </span>
             </div>
-            <div class="text-sm text-red-600">Такой тикер уже добавлен</div>
+            <div v-if="checkMuch" class="text-sm text-red-600">
+              Такой тикер уже добавлен
+            </div>
           </div>
         </div>
         <button
@@ -68,6 +59,26 @@
         </button>
       </section>
       <template v-if="tickers.length">
+        <hr class="w-full border-t border-gray-600 my-4" />
+
+        <div>
+          <button
+            class="my-4 mx-2 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+          >
+            Назад
+          </button>
+          <button
+            class="my-4 mx-2 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+          >
+            Вперед
+          </button>
+          <div>
+            Фильтр:
+            <input
+              class="pr-10 border-gray-300 text-gray-900 focus:outline-none focus:ring-gray-500 focus:border-gray-500 sm:text-sm rounded-md"
+            />
+          </div>
+        </div>
         <hr class="w-full border-t border-gray-600 my-4" />
         <dl class="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-3">
           <div
@@ -160,13 +171,17 @@ export default {
   data() {
     return {
       coinList: [],
-      shownAutoComplitTickets: [],
+      autoComplitTickers: [],
+      showAutoComplitTickers: "",
       ticker: "",
       tickers: [], // Монеты добавленные для отслеживания
       sel: null,
       graph: [],
+      inter: [],
+      checkMuch: false,
     };
   },
+
   mounted: async function () {
     const f = await fetch(
       "https://min-api.cryptocompare.com/data/all/coinlist?summary=true"
@@ -176,6 +191,7 @@ export default {
       this.coinList.push(key);
     }
   },
+
   created() {
     const tickersData = localStorage.getItem("criptonomicon-list");
     if (tickersData) {
@@ -187,8 +203,10 @@ export default {
   },
 
   methods: {
+    // Подписываемся на обновление манеты
+
     subscribeToUpdate(tickerName) {
-      setInterval(async () => {
+      const nIntervalID = setInterval(async () => {
         // Идем фечем на сервер
         const f = await fetch(
           `https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=26a509a64cdd3533c818e19ff7be03d6df0479645c94471a7ce2d50653d8cd91`
@@ -203,22 +221,41 @@ export default {
           this.graph.push(data.USD);
         }
       }, 5000);
+      this.inter.push({ name: tickerName, IID: nIntervalID });
     },
+
+    // Добавление манеты в список на отслеживание
+
     add() {
       const currentTicker = { name: this.ticker, price: "-" };
-      this.tickers.push(currentTicker);
-      localStorage.setItem("criptonomicon-list", JSON.stringify(this.tickers));
+      if (!this.checkMuch) {
+        this.tickers.push(currentTicker);
+        localStorage.setItem(
+          "criptonomicon-list",
+          JSON.stringify(this.tickers)
+        );
+        this.subscribeToUpdate(currentTicker.name);
+      }
       this.ticker = "";
-      this.subscribeToUpdate(currentTicker.name);
+      this.checkMuch = false;
+      this.autoComplitTickers = [];
+      this.showAutoComplitTickers = "";
     },
+
+    // Добавляем через автокомплит под импутом
+
+    addFromAutoComplit(item) {
+      this.ticker = item;
+      this.add();
+      this.autoComplitTickers = [];
+      this.showAutoComplitTickers = "";
+    },
+
+    // Вывод графика выбранного тикета
 
     select(ticket) {
       this.sel = ticket;
       this.graph = [];
-    },
-
-    handleDelete(tickerToRemove) {
-      this.tickers = this.tickers.filter((t) => t !== tickerToRemove);
     },
 
     normolizeGraph() {
@@ -228,15 +265,52 @@ export default {
         (price) => 5 + ((price - minValue) * 95) / (maxValue - minValue)
       );
     },
-    showAutoComplit(tickerName) {
-      this.coinList.forEach((coin) => {
-        if (coin.match(tickerName)) {
-          this.shownAutoComplitTickets.push(coin);
+
+    // Удаление тикета кнопкой удаления
+
+    handleDelete(tickerToRemove) {
+      this.tickers = this.tickers.filter((t) => t !== tickerToRemove);
+      localStorage.setItem("criptonomicon-list", JSON.stringify(this.tickers));
+      this.inter.forEach((interval) => {
+        if (interval.name === tickerToRemove.name) {
+          clearInterval(interval.IID);
+          this.inter.splice(
+            this.inter.indexOf(interval),
+            this.inter.indexOf(interval)
+          );
         }
       });
-      this.shownAutoComplitTickets.forEach((t, i) => {
-        if (i <= 3) {
-          console.log(t);
+    },
+
+    // Действия на изменения ввода навзвания монеты
+
+    inputHandler(tickerName) {
+      this.checkIfExist(this.ticker);
+      this.fillAutoComplitArrey(tickerName);
+    },
+
+    //Заполняем массив с тикетами для автокомплита
+
+    fillAutoComplitArrey(tickerName) {
+      if (tickerName != 0) {
+        this.coinList.forEach((coin) => {
+          if (coin.match(tickerName)) {
+            this.autoComplitTickers.push(coin);
+          }
+        });
+        this.showAutoComplitTickers = this.autoComplitTickers.slice(0, 4);
+      } else {
+        this.autoComplitTickers = [];
+        this.showAutoComplitTickers = "";
+      }
+    },
+
+    // Проверка на наличие в списке
+
+    checkIfExist(t) {
+      this.tickers.forEach((el) => {
+        if (el.name === t) {
+          this.checkMuch = true;
         }
       });
     },
