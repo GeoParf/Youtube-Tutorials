@@ -100,7 +100,7 @@
                 {{ t.name }} - USD
               </dt>
               <dd class="mt-1 text-3xl font-semibold text-gray-900">
-                {{ t.price }}
+                {{ formatPrice(t.price) }}
               </dd>
             </div>
             <div class="w-full border-t border-gray-200"></div>
@@ -171,6 +171,7 @@
 </template>
 
 <script>
+// Смотри #18
 // Задачи рефакторинга:
 
 // [x] 6. Наличие в состоянии ЗАВИСИМЫХ ДАННЫХ | Критичность: 5+
@@ -187,7 +188,7 @@
 // Параллельно
 // [x] График сломан если везде одинаковые значения
 // [x] При удалении тикера остается выбор
-
+import { subscribeToTicker, unsubscribeFromTicker } from "./api";
 export default {
   name: "App",
   data() {
@@ -224,18 +225,22 @@ export default {
     const windowData = Object.fromEntries(
       new URL(window.location).searchParams.entries()
     );
-    if (windowData.filter) {
-      this.filter = windowData.filter;
-    }
 
-    if (windowData.page) {
-      this.page = windowData.page;
-    }
+    const VALID_KEYS = ["filter", "page"];
+
+    VALID_KEYS.forEach((key) => {
+      if (windowData[key]) {
+        this[key] = windowData[key];
+      }
+    });
+
     const tickersData = localStorage.getItem("criptonomicon-list");
     if (tickersData) {
       this.tickers = JSON.parse(tickersData);
       this.tickers.forEach((ticker) => {
-        this.subscribeToUpdate(ticker.name);
+        subscribeToTicker(ticker.name, (newPrice) =>
+          this.updateTicker(ticker.name, newPrice)
+        );
       });
     }
   },
@@ -278,25 +283,18 @@ export default {
   },
 
   methods: {
-    // Подписываемся на обновление манеты
+    // Форматируем цену для вывода на экран
+    formatPrice(price) {
+      if (price === "-") {
+        return price;
+      }
+      return price > 1 ? price : price.toPrecision(2); // .toFixed(2)
+    },
 
-    subscribeToUpdate(tickerName) {
-      const nIntervalID = setInterval(async () => {
-        // Идем фечем на сервер
-        const f = await fetch(
-          `https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=26a509a64cdd3533c818e19ff7be03d6df0479645c94471a7ce2d50653d8cd91`
-        );
-        // Записываем результат феча в data
-        const data = await f.json();
-        // Для реализации реактивности находим тикер в массиве тикеров по имени
-        this.tickers.find((t) => t.name === tickerName).price =
-          // Форматируем вывод, если цена монеты меньше 1 (может быть много нулей до значащего числа, toPrecision покацывает две последних значащих цифры)
-          data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
-        if (this.selectedTicker?.name === tickerName) {
-          this.graph.push(data.USD);
-        }
-      }, 5000);
-      this.intervals.push({ name: tickerName, IID: nIntervalID });
+    updateTicker(tickerName, price) {
+      this.tickers
+        .filter((t) => t.name === tickerName)
+        .forEach((t) => (t.price = price));
     },
 
     // Добавление манеты в список на отслеживание
@@ -304,15 +302,19 @@ export default {
     add() {
       const currentTicker = { name: this.ticker, price: "-" };
       this.checkIfExist(currentTicker.name);
-      if (!this.checkMuch) {
-        this.tickers = [...this.tickers, currentTicker]; // !!!
-        this.subscribeToUpdate(currentTicker.name);
-      }
       this.ticker = "";
+      this.filter = "";
+
+      if (!this.checkMuch) {
+        this.tickers = [...this.tickers, currentTicker];
+        subscribeToTicker(currentTicker.name, (newPrice) =>
+          this.updateTicker(currentTicker.name, newPrice)
+        );
+      }
+
       this.checkMuch = false;
       this.autoComplitTickers = [];
       this.showAutoComplitTickers = "";
-      this.filter = "";
     },
 
     // Добавляем через автокомплит под импутом
@@ -331,15 +333,7 @@ export default {
         this.selectedTicker = null;
       }
 
-      this.intervals.forEach((interval) => {
-        if (interval.name === tickerToRemove.name) {
-          clearInterval(interval.IID);
-          this.intervals.splice(
-            this.intervals.indexOf(interval),
-            this.intervals.indexOf(interval)
-          );
-        }
-      });
+      unsubscribeFromTicker(tickerToRemove.name);
     },
 
     // Вывод графика выбранного тикета
@@ -348,7 +342,7 @@ export default {
       this.selectedTicker = ticket;
     },
 
-    // Действия на изменения ввода навзвания монеты
+    // Действия на изменения ввода названия монеты
 
     inputHandler(tickerName) {
       this.checkIfExist(this.ticker);
@@ -364,6 +358,7 @@ export default {
             this.autoComplitTickers.push(coin);
           }
         });
+
         this.showAutoComplitTickers = this.autoComplitTickers.slice(0, 4);
       } else {
         this.autoComplitTickers = [];
@@ -371,7 +366,7 @@ export default {
       }
     },
 
-    // Проверка на наличие в списке
+    // Проверка на наличие в списке монет
 
     checkIfExist(t) {
       this.tickers.forEach((el) => {
@@ -391,17 +386,21 @@ export default {
         );
       }
     },
+
     selectedTicker() {
       this.graph = [];
     },
+
     paginatedTickers() {
       if (this.paginatedTickers.length === 0 && this.page > 0) {
         this.page -= 1;
       }
     },
+
     filter() {
       this.page = 1;
     },
+
     pageStateOption(value) {
       window.history.pushState(
         null,
