@@ -171,7 +171,7 @@
 </template>
 
 <script>
-// Смотри #18
+// Смотри #19
 // Задачи рефакторинга:
 
 // [x] 6. Наличие в состоянии ЗАВИСИМЫХ ДАННЫХ | Критичность: 5+
@@ -288,13 +288,18 @@ export default {
       if (price === "-") {
         return price;
       }
-      return price > 1 ? price : price.toPrecision(2); // .toFixed(2)
+      return price > 1 ? price.toFixed(2) : price.toPrecision(2); // .toFixed(2)
     },
 
     updateTicker(tickerName, price) {
       this.tickers
         .filter((t) => t.name === tickerName)
-        .forEach((t) => (t.price = price));
+        .forEach((t) => {
+          if (t == this.selectedTicker) {
+            this.graph.push(price);
+          }
+          t.price = price;
+        });
     },
 
     // Добавление манеты в список на отслеживание
